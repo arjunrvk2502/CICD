@@ -1,0 +1,45 @@
+name: CICD pipeline for node
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+        - name: checkout code
+          uses: actions/checkout@v4
+
+        - name: setup node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: 20
+            cache: 'npm'
+        
+        - name: install dependencies
+          run: npm install
+
+        - name: build docker image
+          run: docker build -t ${{ secrets.DOCKER_USERNAME }}/node-app:latest .
+
+        - name: login to Docker Hub
+          run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+        - name: push docker image
+          run: docker push ${{ secrets.DOCKER_USERNAME }}/node-app:latest
+        
+        - name: DONE
+          run: echo "Image pushed to Docker Hub successfully."
+
+        - name: Deploy to compute engine via ssh
+          uses: appleboy/ssh-action@v1.0.0
+          with:
+            host: ${{ secrets.HOST }}
+            username: ${{ secrets.USERNAME }}
+            key: ${{ secrets.SSH_KEY }}
+            script: |
+              docker pull ${{ secrets.DOCKER_USERNAME }}/node-app:latest
+              docker stop node-app || true && docker rm node-app || true
+              docker run -d --name node-app -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/node-app:latest
